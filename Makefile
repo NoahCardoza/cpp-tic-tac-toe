@@ -1,7 +1,7 @@
 NAME 	= TicTacToe
 RM 		= /bin/rm
 
-FLAGS 	= -Wall -Wextra -Werror
+FLAGS 	= -Wall -Wextra -Werror -Wno-c++11-extensions
 
 BUILD_DIR := ./build/
 SRC_DIR := ./src/

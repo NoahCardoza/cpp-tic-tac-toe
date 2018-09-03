@@ -6,19 +6,45 @@
 #include <cstdlib>
 #include <ctype.h>
 #include <map>
+#include <vector>
+#include <algorithm>
+#include <random> 
+
+#define CAN_CLEAR_SCREEN 1
+
+#ifdef _WIN32
+    #define CLEAR_SCREEN_CMD "cls"
+#elif __APPLE__ || __unix__
+    #define CLEAR_SCREEN_CMD "clear"
+#else
+    #define CAN_CLEAR_SCREEN 0
+#endif
 
 #define PLAYER_CHAR 'X'
 #define AI_CHAR 'O'
 #define BOARD_INDEX(answer) answer - '0' - 1
-
 #define PLAYER_WIN 1
 #define AI_WIN -1
-
-#define ABS(n) (n * (((n > 0) << 1) - 1))
+#define CHECK_WIN_ROW(index, step) (board[index] == board[index + step] && board[index + step] == board[index + (step * 2)])
+#define GAME_STATE_CONTINUE 0
+#define GAME_STATE_TIE 1
+#define GAME_STATE_WON 2 
 
 using namespace std;
 
 map<char, int> CHAR_TO_INT;
+int seed = time(NULL);
+
+//  2 winning move => player 
+// -2 winning move => ai
+ 
+struct ai_move_t
+{
+    int index;
+    int score;
+    int priority;
+    vector<int> moves;
+};
 
 char board[9];
 
@@ -27,14 +53,18 @@ void game();
 int main() {
     CHAR_TO_INT[PLAYER_CHAR] = PLAYER_WIN;
     CHAR_TO_INT[AI_CHAR] = AI_WIN;
-    srand(time(NULL));
+    srand(seed);
+    if (!CAN_CLEAR_SCREEN) {
+        cout << "I was unable to detect your platform so the screen clear fuction has been dissabled." << endl;
+    }
     game();   
     return 0;
 }
 
 void clear_screen() {
     // Hacky but simple.
-    system("clear");
+    if (CAN_CLEAR_SCREEN)
+        system(CLEAR_SCREEN_CMD);
 }
 
 bool ask_yn(string q) {
@@ -97,8 +127,6 @@ char get_char(istream &stream, char& holder) {
     return holder;
 }
 
-#define CHECK_WIN_ROW(index, step) (board[index] == board[index + step] && board[index + step] == board[index + (step * 2)])
-
 int is_winner() {
     return (
         // rows
@@ -115,10 +143,6 @@ int is_winner() {
     );
 }
 
-#define GAME_STATE_CONTINUE 0
-#define GAME_STATE_TIE 1
-#define GAME_STATE_WON 2 
-
 int game_state() {
     if (is_winner())
         return GAME_STATE_WON;
@@ -127,42 +151,64 @@ int game_state() {
     return GAME_STATE_CONTINUE;
 }
 
-bool make_move(int index, int step) {
-    int total = 0;
+ai_move_t make_move(ai_move_t move, int index, int step) {
     int adj_index;
 
-    for (int i = 0; i < 3; i++)
-       total += CHAR_TO_INT[board[index + (step * i)]];
+    move.priority = 2; 
+    move.score = 0;
+    for (int i = 0; i < 3; i++) {
+        adj_index = index + (step * i);
+        if (is_char_numeric(board[adj_index])) {
+            move.moves.push_back(adj_index);
+        } else {
+            move.score += CHAR_TO_INT[board[adj_index]];
+        }
+        
+    }
+       
 
-    if (ABS(total) == 2) {
-        for (int i = 0; i < 3; i++) {
-            adj_index = index + (step * i);
-            if (is_char_numeric(board[adj_index])) {
-                board[adj_index] = AI_CHAR;
-                return true;
-            }
+    if (move.score == -2) {
+        move.priority = 0; // ai can win
+    } else if (move.score == 2) {
+        move.priority = 1; // user can win
+    } else if (move.score == 0) {
+        move.index = move.moves[rand() % distance(move.moves.begin(), move.moves.end())];
+        return move; 
+    }
+    for (int i = 0; i < 3; i++) {
+        move.index = index + (step * i);
+        if (is_char_numeric(board[move.index])) {
+            return move;
         }
     }
-    return false;
+
+    return move;
+}
+
+bool sort_moves(ai_move_t x, ai_move_t y) {
+    return x.priority < y.priority;
 }
 
 void ai_move() {
-    int move;
+    ai_move_t move;
+    vector<ai_move_t> ai_moves;
 
     for(size_t i = 0; i < 3; i++)
     {
-        if (make_move(i, 3)) return;
-        if (make_move(i * 3, 1)) return;
+        ai_moves.push_back(make_move(move, i, 3));
+        ai_moves.push_back(make_move(move, i * 3, 1));
     }
 
-    if (make_move(0, 4)) return;
-    if (make_move(2, 2)) return;
-    
-    do {
-        move = rand() % 9;
-    } while (!is_char_numeric(board[move]));
+    ai_moves.push_back(make_move(move, 0, 4));
+    ai_moves.push_back(make_move(move, 2, 2));
 
-    board[move] = AI_CHAR;
+    // ensures it dosn't sort equivalent priorities in the same order ever turn
+    auto gen = default_random_engine(seed);
+    shuffle(ai_moves.begin(), ai_moves.end(), gen);
+
+    sort(ai_moves.begin(), ai_moves.end(), sort_moves);
+    
+    board[ai_moves[0].index] = AI_CHAR;
 }
 
 void game() {
